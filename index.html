@@ -20,10 +20,11 @@ html,body{height:100%}
 body{
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
   background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased;overflow:hidden;
+  display:flex;flex-direction:column;-webkit-text-size-adjust:100%;
 }
 /* ============ 顶部导航（无分隔感） ============ */
 .topnav{
-  height:52px;background:var(--bg);
+  height:52px;background:var(--bg);flex-shrink:0;
   display:flex;align-items:center;padding:0 20px;gap:28px;
 }
 .brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;user-select:none}
@@ -63,7 +64,7 @@ select.ghost-btn{appearance:none;padding-right:24px;background-image:url("data:i
 .primary-btn:hover{background:#3560e8}
 
 /* ============ 主区域 ============ */
-.viewport{height:calc(100vh - 52px);overflow:auto;padding:16px 20px 28px}
+.viewport{flex:1 1 auto;min-height:0;overflow:auto;padding:16px 20px 28px}
 .page{display:none;max-width:1200px;margin:0 auto}
 .page.on{display:block}
 
@@ -285,13 +286,101 @@ select.ghost-btn{appearance:none;padding-right:24px;background-image:url("data:i
 ::-webkit-scrollbar{width:7px;height:7px}
 ::-webkit-scrollbar-thumb{background:rgba(0,0,0,.14);border-radius:4px}
 ::-webkit-scrollbar-track{background:transparent}
+
+/* ============ 移动端适配 ============ */
+@media(max-width:720px){
+  body{max-width:100vw;overflow-x:hidden}
+  .topnav{height:auto;flex-wrap:wrap;padding:6px 12px 0;gap:0;width:100%;max-width:100vw;min-width:0}
+  .brand{order:1}
+  .brand .btxt{display:none}
+  .tabs{order:2;margin-left:10px;height:42px}
+  .tab{margin:0 8px;font-size:13.5px}
+  .top-right{order:3;width:100%;margin-left:0;padding:2px 0 8px;gap:6px;flex-wrap:wrap;min-width:0}
+  .dnav{order:1}
+  #todayBtn{order:2}
+  #exportBtn{order:3}
+  #journalTools{order:4;flex:1 0 100%;display:flex;gap:6px;min-width:0;overflow:hidden}
+  #journalTools select{flex:1 1 0;width:100%;max-width:100%;min-width:0}
+  .dnav .lbl{min-width:104px;font-size:12.5px}
+  .dnav button{width:24px;height:24px}
+  .ghost-btn{height:26px;padding:0 9px;font-size:11.5px}
+  select.ghost-btn{padding-right:20px;background-position:right 7px center}
+  .primary-btn{height:26px;padding:0 10px;font-size:11.5px}
+
+  .viewport{padding:10px 12px 24px;min-width:0;width:100%;max-width:100vw}
+  .page{min-width:0;max-width:100%}
+  .journal-toolbar{margin-bottom:10px;gap:8px}
+  .seg button{padding:5px 11px;font-size:12.5px}
+  .legend{display:none}
+
+  /* 月视图：格子太窄，事件改为彩色圆点，点格进日视图看详情 */
+  .month-grid{gap:4px}
+  .m-head{font-size:10px;padding:2px 0 4px}
+  .m-cell{min-height:62px;padding:5px 4px;border-radius:9px}
+  .m-cell .dnum{width:19px;height:19px;font-size:10.5px;margin-bottom:3px}
+  .m-cell .chips{flex-direction:row;flex-wrap:wrap;gap:3px;align-items:center}
+  .chip{width:7px;height:7px;padding:0;border:none;border-radius:50%;font-size:0;flex-shrink:0;
+    background:var(--cc,#4772FA)!important;opacity:.85}
+  .chip.planned{background:transparent!important;border:1.4px solid var(--cc,#8A8F99);box-sizing:border-box;opacity:1}
+  .chip.more{width:auto;height:auto;font-size:9px;padding:0;color:var(--text2);background:transparent!important}
+  .m-cell .thumbs{margin-top:3px;gap:2px}
+  .m-cell .thumbs span{width:11px;height:11px;border-radius:3px}
+
+  /* 周视图：横向滚动，不再压缩 7 列 */
+  .week-wrap{overflow:auto;-webkit-overflow-scrolling:touch}
+  .wk-head,.wk-allday,.wk-body{min-width:660px}
+  .wk-head .gutter,.wk-allday .gutter,.wk-times{position:sticky;left:0;background:var(--surface);z-index:4}
+  .wk-head .gutter,.wk-allday .gutter{width:42px;min-width:42px}
+  .wk-times{width:42px;min-width:42px}
+  .wk-times div,.wk-times .tkw{font-size:9.5px;padding-right:4px}
+  .wk-ev{padding:3px 5px;font-size:10.5px}
+  .wk-ev .m{font-size:9px}
+  .wk-body{max-height:none;overflow:visible}
+
+  /* 日视图 */
+  .day-wrap{gap:10px}
+  .day-main{padding:16px 14px}
+  .day-side{padding:16px;position:static}
+  .day-big .n{font-size:34px}
+  .day-big .w{font-size:13px}
+  .tl-item{gap:10px;padding:10px 0}
+  .tl-time{width:66px;min-width:66px;font-size:10.5px}
+  .tl-title{font-size:13.5px}
+  .side-photos{grid-template-columns:repeat(4,1fr)}
+
+  /* 年视图 */
+  .year-grid{gap:8px}
+  .ym{padding:10px;border-radius:11px}
+  .ym h4{font-size:12px;margin-bottom:6px}
+  .ym .mini i{font-size:8.5px;border-radius:4px}
+
+  /* 总结页 */
+  .stat-row{gap:8px}
+  .stat{padding:13px 14px}
+  .stat .v{font-size:20px}
+  .stat .k{font-size:11px}
+  .panel{padding:14px 14px}
+  .bar-row .nm{width:86px;min-width:86px;font-size:11.5px}
+  .bar-row .ct{width:34px;font-size:11.5px}
+
+  /* 手账卡片改为底部抽屉，手指可达 */
+  .pop{
+    left:8px!important;right:8px;top:auto!important;bottom:8px;width:auto;
+    max-height:74vh;border-radius:16px;transform:translateY(16px);
+  }
+  .pop.show{transform:none}
+  .pop-head{padding:13px 16px 10px}
+  .pop-body{padding:10px 16px}
+  .dialog{width:auto;margin:10px;padding:20px}
+  .d-actions{margin-top:16px}
+}
 </style>
 </head>
 <body>
 
 <!-- 顶部导航：无分隔 -->
 <nav class="topnav">
-  <div class="brand"><span class="mark">✓</span>滴答手账</div>
+  <div class="brand"><span class="mark">✓</span><span class="btxt">滴答手账</span></div>
   <div class="tabs">
     <div class="tab on" data-page="journal">手账</div>
     <div class="tab" data-page="summary">总结</div>
@@ -450,7 +539,7 @@ function chipStyle(color){
   const [r,g,b]=hexRgb(color); const lum=(0.299*r+0.587*g+0.114*b)/255;
   const bg = `rgba(${r},${g},${b},${lum>0.8?0.5:0.16})`;
   const fg = lum>0.72 ? mix(color,'#3A3D42',0.62) : mix(color,'#000000',0.28);
-  return `background:${bg};color:${fg};border-left-color:${color}`;
+  return `background:${bg};color:${fg};border-left-color:${color};--cc:${color}`;
 }
 
 /* ================= 数据加载 ================= */
@@ -696,8 +785,9 @@ function vWeek(){
     body+='</div>';
   });
 
+  head+='</div>'; allday+='</div>'; body+='</div>';
   const tools=`<div class="wk-tools"><label class="fold"><input type="checkbox" id="foldChk"${state.fold?' checked':''}>折叠空白时段</label></div>`;
-  return `${tools}<div class="week-wrap">${head}</div>${allday}</div>${body}</div></div>`;
+  return `${tools}<div class="week-wrap">${head}${allday}${body}</div>`;
 }
 
 /* 重叠事件分列：返回时给每个事件写入 _col / _n */
@@ -799,7 +889,14 @@ function bindEvents(root){
       openPop(popCtx,ev.clientX,ev.clientY);
     });
     el.addEventListener('mouseleave',()=>{ popTimer=setTimeout(closePop,180); });
-    el.addEventListener('click',ev=>ev.stopPropagation());
+    el.addEventListener('click',ev=>{
+      ev.stopPropagation();
+      // 触屏无 hover：轻点事件块直接唤出底部抽屉
+      if(!matchMedia('(hover:none)').matches) return;
+      clearTimeout(popTimer);
+      try{ popCtx=JSON.parse(decodeURIComponent(el.dataset.e)); }catch(err){ return; }
+      openPop(popCtx,ev.clientX,ev.clientY);
+    });
   });
   // 空白时段折叠/展开
   const foldChk=root.querySelector('#foldChk');

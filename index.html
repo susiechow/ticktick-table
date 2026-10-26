@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>滴答手账</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="vendor/html2canvas.min.js"></script>
 <style>
 :root{
   --dd-blue:#4772FA;
@@ -178,6 +179,7 @@ select.ghost-btn{appearance:none;padding-right:24px;background-image:url("data:i
 .tl-meta{font-size:12px;color:var(--text2);margin-top:2px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .tl-tag{font-size:11px;padding:1px 8px;border-radius:10px}
 .tl-content{font-size:12.5px;color:var(--text2);margin-top:5px;white-space:pre-wrap}
+.tl-comment{font-size:12.5px;color:var(--text);margin-top:5px;padding-left:9px;border-left:2px solid rgba(0,0,0,.12);white-space:pre-wrap}
 .tl-item.planned .tl-title{color:var(--text2);font-weight:500}
 .tl-item.planned .tl-bar{background:transparent!important;border:1.5px dashed var(--text2);width:2px}
 .day-empty{padding:38px 0;text-align:center;color:var(--text2);font-size:13px}
@@ -228,6 +230,7 @@ select.ghost-btn{appearance:none;padding-right:24px;background-image:url("data:i
 .pop-notes{display:flex;flex-direction:column;gap:8px}
 .pop-note{background:rgba(0,0,0,.035);border-radius:9px;padding:8px 11px;font-size:12.5px}
 .pop-note .tm{font-size:10.5px;color:var(--text2);margin-top:3px}
+.pop-note.dd{background:rgba(71,114,250,.08);border-left:3px solid var(--dd-blue)}
 .pop-foot{padding:10px 14px;border-top:1px solid rgba(0,0,0,.05);display:flex;gap:8px}
 .pop-foot button{
   flex:1;height:30px;border:1px dashed rgba(0,0,0,.15);background:transparent;border-radius:8px;
@@ -374,6 +377,19 @@ select.ghost-btn{appearance:none;padding-right:24px;background-image:url("data:i
   .dialog{width:auto;margin:10px;padding:20px}
   .d-actions{margin-top:16px}
 }
+/* ============ 导出用的离屏渲染舞台 ============ */
+.print-stage{
+  position:fixed;left:0;top:0;background:var(--bg);
+  padding:16px 20px;pointer-events:none;z-index:900;
+}
+.print-loading{
+  position:fixed;inset:0;z-index:1000;background:rgba(247,248,250,.985);
+  display:flex;align-items:center;justify-content:center;
+  font-size:13px;color:#8A8F99;letter-spacing:.5px;
+}
+.print-stage .wk-body{max-height:none!important;overflow:visible!important}
+.print-stage .day-side{position:static!important}
+.print-stage .m-cell:hover{box-shadow:none!important;transform:none!important}
 </style>
 </head>
 <body>
@@ -475,7 +491,16 @@ select.ghost-btn{appearance:none;padding-right:24px;background-image:url("data:i
 <div class="mask" id="pdfMask">
   <div class="dialog">
     <h3>导出手账 PDF</h3>
+    <div class="f-row"><label>视图</label>
+      <select id="pdfView">
+        <option value="day">日视图</option>
+        <option value="week">周视图</option>
+        <option value="month" selected>月视图</option>
+        <option value="year">年视图</option>
+      </select>
+    </div>
     <div class="f-row"><label>日期</label><input type="date" id="pdfDate"></div>
+    <div class="f-row" style="color:var(--text2);font-size:12px">导出内容与工作台当前所见一致（含清单颜色、图片与评论）</div>
     <div class="f-row"><label>页面尺寸</label>
       <select id="pdfSize">
         <option value="a5">A5（148×210mm）</option>
@@ -521,7 +546,7 @@ const state = {
   filter:'overlap',
   fold:true,            // 周视图折叠空白时段
   openGaps:new Set(),   // 被单独展开的空白区间 key: "9-16"
-  tasks:[], focus:[], planned:[],
+  tasks:[], focus:[], planned:[], comments:{},
   journal:{}   // dayKey -> {photos:[], notes:[{text,time}]}
 };
 
@@ -544,12 +569,16 @@ function chipStyle(color){
 
 /* ================= 数据加载 ================= */
 async function loadAll(){
-  const [t,f,p] = await Promise.all([
+  const [t,f,p,c] = await Promise.all([
     fetch('data/tasks.json').then(r=>r.json()).catch(()=>[]),
     fetch('data/focus.json').then(r=>r.json()).catch(()=>[]),
-    fetch('data/planned.json').then(r=>r.json()).catch(()=>[])
+    fetch('data/planned.json').then(r=>r.json()).catch(()=>[]),
+    fetch('data/comments.json').then(r=>r.json()).catch(()=>[])
   ]);
   state.tasks=t||[]; state.planned=p||[];
+  // 滴答原生评论：taskId -> [comment]
+  state.comments={};
+  (c||[]).forEach(x=>{ if(x&&x.taskId) state.comments[x.taskId]=x.comments||[]; });
   // 归一化：focus.tasks 可能是对象（单元素被压缩）
   state.focus=(f||[]).map(x=>{ let ts=x.tasks; if(ts&&!Array.isArray(ts)) ts=[ts]; return {...x,tasks:ts||[]}; });
   try{ state.journal = JSON.parse(localStorage.getItem('dd_journal')||'{}'); }catch(e){ state.journal={}; }
@@ -573,6 +602,7 @@ function getEvents(date){
     const pr=proj(t.projectId);
     const tEnd=(!t.isAllDay&&sd&&pdate(t.dueDate)&&pdate(t.dueDate)>sd)?pdate(t.dueDate):null;
     out.push({uid:'t'+t.id, sid:t.id, kind:'task', title:t.title, content:t.content||'',
+      comments:state.comments[t.id]||[],
       time:at, start:(t.isAllDay||!sd)?null:sd, end:tEnd, color:pr.color, project:pr.name, column:t.columnName});
   });
 
@@ -670,7 +700,7 @@ function chipHtml(e){
   const icon=e.kind==='focus'?'⏱ ':'';
   return `<div class="chip" style="${chipStyle(e.color)}" data-e="${data}">${icon}${e.title}</div>`;
 }
-function slim(e){ return {uid:e.uid,kind:e.kind,title:e.title,content:e.content,color:e.color,project:e.project,
+function slim(e){ return {uid:e.uid,kind:e.kind,title:e.title,content:e.content,comments:e.comments||[],color:e.color,project:e.project,
   timeStr:e.start?hm(e.start):hm(e.time), dur:e.dur?fdur(e.dur):null, dayKey:e.dayKey}; }
 
 function vMonth(){
@@ -833,6 +863,7 @@ function vDay(){
           ${e.dur?`<span>专注 ${fdur(e.dur)}</span>`:''}
         </div>
         ${e.content?`<div class="tl-content">${esc(e.content)}</div>`:''}
+        ${(e.comments&&e.comments.length)?e.comments.map(c=>`<div class="tl-comment">💬 ${esc(c.title)}</div>`).join(''):''}
       </div></div>`;
   });
   h+='</div>';
@@ -925,6 +956,10 @@ function openPop(e,x,y){
   const jd=state.journal[e.dayKey]||{};
   let h='';
   if(e.content) h+=`<div class="pop-sec"><h5>内容</h5><div class="pop-text">${esc(e.content)}</div></div>`;
+  if(e.comments&&e.comments.length){
+    h+=`<div class="pop-sec"><h5>滴答评论 ${e.comments.length}</h5><div class="pop-notes">`+
+       e.comments.map(c=>`<div class="pop-note dd">${esc(c.title)}<div class="tm">${esc(c.createdTime||'').slice(5,16).replace('T',' ')}</div></div>`).join('')+'</div></div>';
+  }
   if(jd.photos&&jd.photos.length){
     h+=`<div class="pop-sec"><h5>照片 ${jd.photos.length}</h5><div class="pop-photos">`+
        jd.photos.map(p=>`<div class="pp" style="background-image:url(${p})"></div>`).join('')+'</div></div>';
@@ -1051,9 +1086,10 @@ function renderSummary(){
   document.getElementById('summaryView').innerHTML=h;
 }
 
-/* ================= PDF 导出 ================= */
+/* ================= PDF 导出（所见即所得：截图当前视图后嵌入） ================= */
 document.getElementById('exportBtn').onclick=()=>{
   document.getElementById('pdfDate').value=dkey(state.cur);
+  document.getElementById('pdfView').value=state.view;
   document.getElementById('pdfMask').classList.add('on');
 };
 document.getElementById('pdfCancel').onclick=()=>closeMask('pdfMask');
@@ -1061,58 +1097,72 @@ document.getElementById('pdfOk').onclick=async()=>{
   closeMask('pdfMask');
   const dateStr=document.getElementById('pdfDate').value;
   const size=document.getElementById('pdfSize').value;
+  const view=document.getElementById('pdfView').value;
+  if(!dateStr){ alert('请先选择日期'); return; }
   const [yy,mm,dd]=dateStr.split('-').map(Number);
-  const date=new Date(yy,mm-1,dd), key=dateStr;
-  const evs=getEvents(date); evs.forEach(e=>e.dayKey=key);
-  const jd=state.journal[key]||{};
-  const wk=['周日','周一','周二','周三','周四','周五','周六'];
+
+  // 按所选视图离屏渲染一份，截完立即恢复原状
+  const prevView=state.view, prevCur=new Date(state.cur), prevFold=state.fold;
+  state.view=view; state.cur=new Date(yy,mm-1,dd);
+  if(view==='week') state.fold=true;
+  render();
+
+  const stage=document.createElement('div');
+  stage.className='print-stage';
+  stage.style.width=(view==='year'?1000:1160)+'px';
+  const inner=document.createElement('div');
+  inner.style.width='100%';
+  inner.innerHTML=document.getElementById('journalView').innerHTML;
+  stage.appendChild(inner);
+
+  const loading=document.createElement('div');
+  loading.className='print-loading';
+  loading.textContent='正在生成 PDF…';
+  document.body.appendChild(stage);
+  document.body.appendChild(loading);
+
+  let canvas=null;
+  try{
+    if(!window.html2canvas) throw new Error('html2canvas 未加载，请检查网络后刷新页面');
+    canvas=await html2canvas(stage,{
+      scale:2, backgroundColor:'#F7F8FA', useCORS:true, logging:false,
+      windowWidth:Math.max(stage.offsetWidth,window.innerWidth),
+      windowHeight:Math.max(stage.scrollHeight,stage.offsetHeight)
+    });
+  }catch(err){
+    alert('导出失败：'+((err&&err.message)||err));
+  }finally{
+    loading.remove();
+    stage.remove();
+    state.view=prevView; state.cur=prevCur; state.fold=prevFold; render();
+  }
+  if(!canvas) return;
+
   const {jsPDF}=window.jspdf;
   const sizes={a5:[148,210],b6:[128,182],personal:[95,171],a6:[105,148],a4:[210,297]};
   const [W,H]=sizes[size];
-  const doc=new jsPDF({unit:'mm',format:[W,H]});
-  let pos=13;
-  const C=[71,114,250], T=[51,52,56], G=[138,143,153];
-  doc.setFillColor(...C); doc.rect(0,0,W,2.5,'F');
-  doc.setFontSize(W/7); doc.setTextColor(...C);
-  doc.text(String(dd),W/2,pos+8,{align:'center'}); pos+=16;
-  doc.setFontSize(Math.max(8,W/16)); doc.setTextColor(...G);
-  doc.text(`${yy} / ${mm} · ${wk[date.getDay()]}`,W/2,pos,{align:'center'}); pos+=7;
-  doc.setDrawColor(...C); doc.setLineWidth(.4); doc.line(12,pos,W-12,pos); pos+=7;
+  const doc=new jsPDF({unit:'mm',format:[W,H],orientation:'portrait'});
+  const M=6, pageW=W-M*2, pageH=H-M*2;
+  const k=pageW/canvas.width;            // 每像素对应的毫米数
+  const pxPerPage=Math.floor(pageH/k);
 
-  doc.setFontSize(Math.max(7,W/18)); doc.setTextColor(...C); doc.text('TODAY',12,pos); pos+=5;
-  doc.setFontSize(Math.max(6.5,W/24)); doc.setTextColor(...T);
-  if(!evs.length){ doc.setTextColor(...G); doc.text('—',12,pos); pos+=6; }
-  evs.forEach(e=>{
-    if(pos>H-16){doc.addPage();pos=14;}
-    const mark=e.kind==='focus'?'[F]':e.kind==='planned'?'[ ]':'[x]';
-    const line=`${mark} ${e.title}   ${e.start?hm(e.start):''}${e.dur?' '+fdur(e.dur):''}`;
-    doc.splitTextToSize(line,W-24).forEach(l=>{ doc.text(l,12,pos); pos+=4.6; if(pos>H-14){doc.addPage();pos=14;} });
-  });
-  pos+=3; doc.setDrawColor(...G); doc.setLineWidth(.2); doc.line(12,pos,W-12,pos); pos+=6;
-
-  if(jd.photos&&jd.photos.length){
-    doc.setFontSize(Math.max(7,W/18)); doc.setTextColor(...C); doc.text('PHOTOS',12,pos); pos+=5;
-    const iw=Math.min(34,(W-30)/2); let col=0;
-    for(const p of jd.photos){
-      if(pos+iw>H-14){doc.addPage();pos=14;col=0;}
-      try{ doc.addImage(p,'JPEG',12+col*(iw+5),pos,iw,iw,undefined,'FAST'); }catch(err){}
-      col++; if(col>=2){col=0;pos+=iw+4;}
+  if(canvas.height<=pxPerPage){
+    doc.addImage(canvas.toDataURL('image/jpeg',0.95),'JPEG',M,M,pageW,canvas.height*k);
+  }else{
+    let y=0, first=true;
+    while(y<canvas.height){
+      const h=Math.min(pxPerPage,canvas.height-y);
+      const tmp=document.createElement('canvas');
+      tmp.width=canvas.width; tmp.height=h;
+      const ctx=tmp.getContext('2d');
+      ctx.fillStyle='#F7F8FA'; ctx.fillRect(0,0,tmp.width,tmp.height);
+      ctx.drawImage(canvas,0,y,canvas.width,h,0,0,canvas.width,h);
+      if(!first) doc.addPage();
+      doc.addImage(tmp.toDataURL('image/jpeg',0.95),'JPEG',M,M,pageW,h*k);
+      first=false; y+=h;
     }
-    if(col>0) pos+=iw+4; pos+=3;
   }
-  if(jd.notes&&jd.notes.length){
-    if(pos+14>H-10){doc.addPage();pos=14;}
-    doc.setFontSize(Math.max(7,W/18)); doc.setTextColor(...C); doc.text('NOTES',12,pos); pos+=5;
-    jd.notes.forEach(n=>{
-      doc.setFontSize(Math.max(6.5,W/26)); doc.setTextColor(...T);
-      doc.splitTextToSize(n.text,W-26).forEach(l=>{ if(pos>H-12){doc.addPage();pos=14;} doc.text(l,14,pos); pos+=4.4; });
-      doc.setFontSize(Math.max(5.5,W/32)); doc.setTextColor(...G);
-      doc.text(n.time,14,pos); pos+=6;
-    });
-  }
-  doc.setFontSize(6); doc.setTextColor(...G);
-  doc.text('didaban · journal',W/2,H-6,{align:'center'});
-  doc.save(`手账_${key}_${size.toUpperCase()}.pdf`);
+  doc.save(`手账_${dateStr}_${view}_${size.toUpperCase()}.pdf`);
 };
 
 /* ================= 导航绑定 ================= */
